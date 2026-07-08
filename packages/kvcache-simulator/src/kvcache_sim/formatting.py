@@ -5,7 +5,7 @@ from typing import Any
 
 
 def format_percent(value: float) -> str:
-    return f"{value * 100:.1f}%"
+    return f"{value * 100:.2f}%"
 
 
 def format_speedup(value: float) -> str:
@@ -83,3 +83,26 @@ def render_table(result: dict[str, Any]) -> str:
 
 def render_json(result: dict[str, Any], *, pretty: bool = True) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2 if pretty else None, sort_keys=False)
+
+
+def render_summary(result: dict[str, Any], *, plot_output: str | None = None) -> str:
+    meta = result.get("metadata") or {}
+    policies = result.get("policies") or ["fifo", "lru", "optimal"]
+    points = result.get("points") or []
+    lines = [
+        "Summary:",
+        f"  Model: {meta.get('modelLabel') or meta.get('modelId') or 'unknown'}",
+        f"  Requests: {format_number(float(meta.get('requestCount') or 0))}",
+        f"  Hit rate ceiling: {format_percent(float(result.get('hitRateCeiling') or 0))}",
+    ]
+    if points:
+        lines.append(f"  Budget points: {len(points)} ({format_number(points[0]['gib'])} GiB to {format_number(points[-1]['gib'])} GiB)")
+        for policy in policies:
+            best_point = max(points, key=lambda point: float(point["results"][policy]["hitRate"]))
+            best_hit_rate = float(best_point["results"][policy]["hitRate"])
+            lines.append(f"  Best {policy.upper()}: {format_percent(best_hit_rate)} at {format_number(best_point['gib'])} GiB")
+    else:
+        lines.append("  Budget points: 0")
+    if plot_output:
+        lines.append(f"  Plot: {plot_output}")
+    return "\n".join(lines)

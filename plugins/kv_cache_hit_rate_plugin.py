@@ -479,7 +479,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             result = plugin.simulate_trace(args.trace, **simulator_kwargs(args))
             if args.plot_output:
                 plugin.plot_result(result, args.plot_output)
+            _ensure_simulator_importable()
+            from kvcache_sim.formatting import render_summary
+
             _write_json(result, args.output)
+            print(render_summary(result, plot_output=str(args.plot_output) if args.plot_output else None), file=sys.stderr)
             return 0
 
         if args.command == "run":
@@ -494,7 +498,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
             if args.plot_output:
                 plugin.plot_result(result, args.plot_output)
+            _ensure_simulator_importable()
+            from kvcache_sim.formatting import render_summary
+
             _write_json(result, args.output)
+            print(render_summary(result, plot_output=str(args.plot_output) if args.plot_output else None), file=sys.stderr)
             return 0
     except UnsupportedDatasetFormatError as exc:
         print(f"unsupported dataset format: {exc}", file=sys.stderr)

@@ -433,6 +433,8 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertEqual(parsed["points"][0]["cacheBlocks"], 1)
         self.assertIn("Measurement: hit rates use all requests", table.stdout)
         self.assertIn("Speedup: 1.0x means no-cache prefill throughput", table.stdout)
+        self.assertIn("Summary:", as_json.stderr)
+        self.assertIn("Hit rate ceiling: 50.00%", as_json.stderr)
 
     def test_cli_plot_command_writes_image_from_json(self) -> None:
         try:

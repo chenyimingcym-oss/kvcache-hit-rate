@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 from .calculator import load_models_data, models_by_id
-from .formatting import render_json, render_table
+from .formatting import render_json, render_summary, render_table
 from .plotting import plot_hit_rate_sweep
 from .progress import ProgressBar
 from .simulator import DEFAULT_BUDGETS_GIB, DEFAULT_POLICIES, run_sweep
@@ -105,6 +105,7 @@ def run_sweep_command(args: argparse.Namespace) -> int:
         if args.plot_output:
             plot_hit_rate_sweep(result, args.plot_output)
         progress.finish()
+        print(render_summary(result, plot_output=args.plot_output), file=sys.stderr)
         return 0
     except Exception:
         progress.close()
