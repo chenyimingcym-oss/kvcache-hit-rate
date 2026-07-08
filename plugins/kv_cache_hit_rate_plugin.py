@@ -29,6 +29,8 @@ try:
     )
     from .dataset_converters import (
         DATASET_FORMATS,
+        SUPPORTED_DATASET_FORMATS,
+        UnsupportedDatasetFormatError,
         convert_dataset,
         iter_dataset_records,
         normalize_dataset_record,
@@ -42,6 +44,8 @@ except ImportError:
     )
     from dataset_converters import (
         DATASET_FORMATS,
+        SUPPORTED_DATASET_FORMATS,
+        UnsupportedDatasetFormatError,
         convert_dataset,
         iter_dataset_records,
         normalize_dataset_record,
@@ -190,6 +194,12 @@ class KVCacheHitRatePlugin:
 
                 if max_records and total >= max_records:
                     break
+
+        if total == 0:
+            raise UnsupportedDatasetFormatError(
+                f"no supported dataset records were found in {input_path}; skipped {skipped} record(s). "
+                f"{SUPPORTED_DATASET_FORMATS}"
+            )
 
         return {
             "total": total,
@@ -413,48 +423,52 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.print_help(sys.stderr)
         return 2
 
-    if args.command == "normalize":
-        stats = convert_dataset(
-            args.input,
-            args.output,
-            dataset_format=args.dataset_format,
-            keep_messages=not args.drop_messages,
-            max_records=args.max_records,
-            strict=args.strict,
-        )
-        _write_json(stats, None)
-        return 0
+    try:
+        if args.command == "normalize":
+            stats = convert_dataset(
+                args.input,
+                args.output,
+                dataset_format=args.dataset_format,
+                keep_messages=not args.drop_messages,
+                max_records=args.max_records,
+                strict=args.strict,
+            )
+            _write_json(stats, None)
+            return 0
 
-    plugin = plugin_from_args(args)
-    if args.command == "convert":
-        stats = plugin.prompts_jsonl_to_trace(
-            args.input,
-            args.output,
-            dataset_format=args.dataset_format,
-            use_chat_template=args.use_chat_template,
-            max_records=args.max_records,
-            strict=args.strict,
-        )
-        _write_json(stats, None)
-        return 0
+        plugin = plugin_from_args(args)
+        if args.command == "convert":
+            stats = plugin.prompts_jsonl_to_trace(
+                args.input,
+                args.output,
+                dataset_format=args.dataset_format,
+                use_chat_template=args.use_chat_template,
+                max_records=args.max_records,
+                strict=args.strict,
+            )
+            _write_json(stats, None)
+            return 0
 
-    if args.command == "simulate":
-        result = plugin.simulate_trace(args.trace, **simulator_kwargs(args))
-        _write_json(result, args.output)
-        return 0
+        if args.command == "simulate":
+            result = plugin.simulate_trace(args.trace, **simulator_kwargs(args))
+            _write_json(result, args.output)
+            return 0
 
-    if args.command == "run":
-        result = plugin.prompts_jsonl_to_hit_rate(
-            args.input,
-            trace_output_path=args.trace_output,
-            dataset_format=args.dataset_format,
-            use_chat_template=args.use_chat_template,
-            max_records=args.max_records,
-            strict=args.strict,
-            **simulator_kwargs(args),
-        )
-        _write_json(result, args.output)
-        return 0
+        if args.command == "run":
+            result = plugin.prompts_jsonl_to_hit_rate(
+                args.input,
+                trace_output_path=args.trace_output,
+                dataset_format=args.dataset_format,
+                use_chat_template=args.use_chat_template,
+                max_records=args.max_records,
+                strict=args.strict,
+                **simulator_kwargs(args),
+            )
+            _write_json(result, args.output)
+            return 0
+    except UnsupportedDatasetFormatError as exc:
+        print(f"unsupported dataset format: {exc}", file=sys.stderr)
+        return 1
 
     parser.print_help(sys.stderr)
     return 2

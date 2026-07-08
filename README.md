@@ -38,12 +38,28 @@ kvcache-simulator --help
 
 ## Example
 
+Convert a supported dataset directly into KV cache hit-rate results:
+
 ```bash
-kvcache-hit-rate simulate \
-  --trace path/to/kvcache_trace.jsonl \
+kvcache-hit-rate run \
+  --input path/to/sharegpt.json \
+  --dataset-format sharegpt \
+  --trace-output /tmp/kvcache_trace_blksz64.jsonl \
   --model qwen3-32b \
   --kv-precision fp8_int8 \
-  --budgets-gib 1,2,4,8
+  --budgets-gib 1,2,4,8 \
+  --output /tmp/kvcache_hit_rate.json
 ```
+
+`--dataset-format auto` can detect prompt JSONL, OpenAI `messages` /
+`body.messages`, and ShareGPT `conversations`. If the input has no supported
+records, the command exits with an unsupported dataset format message listing
+the accepted shapes.
+
+Hit-rate commands default to `--warmup-fraction 0`, so results are measured
+from a cold cache over all requests. Use `--warmup-fraction 0.5
+--exclude-underfilled` to reproduce the old last-half measurement window.
+The JSON result also includes `hitRateCeiling`, the theoretical highest hit
+rate when KV cache capacity is unlimited.
 
 See `plugins/README.md` and `packages/kvcache-simulator/README.md` for more details.

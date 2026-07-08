@@ -18,6 +18,28 @@ def format_number(value: float) -> str:
     return f"{value:,.2f}"
 
 
+def measurement_description(meta: dict[str, Any]) -> str:
+    window = meta.get("measurementWindow")
+    if window == "all_requests":
+        measurement = "all requests"
+    elif window == "last_50_percent_requests":
+        measurement = "the last 50% of requests"
+    elif isinstance(window, str) and window.startswith("last_") and window.endswith("_fraction_requests"):
+        fraction = window.removeprefix("last_").removesuffix("_fraction_requests")
+        try:
+            measurement = f"the last {float(fraction) * 100:.1f}% of requests"
+        except ValueError:
+            measurement = window.replace("_", " ")
+    else:
+        measurement = str(window or "the configured request window").replace("_", " ")
+
+    if meta.get("underfilledBudgetPolicy") == "include_from_empty_cache":
+        pressure = "underfilled budgets are included."
+    else:
+        pressure = "budget points that do not fill the cache before this window are omitted."
+    return f"Measurement: hit rates use {measurement}; {pressure}"
+
+
 def render_table(result: dict[str, Any]) -> str:
     meta = result["metadata"]
     policies = result.get("policies") or ["fifo", "lru", "optimal"]
@@ -28,7 +50,7 @@ def render_table(result: dict[str, Any]) -> str:
         f"Accounting: {meta['bytesPerToken']:.5f} bytes/token, {meta['bytesPerBlock']:.5f} bytes/block, estimate tokens {meta['estimateTokens']}",
         f"Simulation backend: {str(meta.get('backend', 'cpp')).upper()}",
         f"Hit rate ceiling: {format_percent(result['hitRateCeiling'])}",
-        "Measurement: hit rates use the last 50% of requests; budget points that do not fill the cache before this window are omitted.",
+        measurement_description(meta),
         "Speedup: 1.0x means no-cache prefill throughput where every prefill input token is computed.",
         "",
     ]
@@ -46,7 +68,7 @@ def render_table(result: dict[str, Any]) -> str:
             row.append(format_speedup(point["results"][policy]["idealPrefillSpeedup"]))
         rows.append(row)
     if not rows:
-        lines.append("No budget point reached cache pressure before the 50% measurement window.")
+        lines.append("No budget point reached cache pressure before the measurement window.")
         return "\n".join(lines)
     widths = [len(header) for header in headers]
     for row in rows:

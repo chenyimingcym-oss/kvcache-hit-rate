@@ -108,13 +108,13 @@ def run_sweep(
     budgets_gib: list[float] | None = None,
     policies: list[str] | None = None,
     jobs: int = 1,
-    backend: str = "cpp",
+    backend: str = "python",
     progress: ProgressCallback | None = None,
-    warmup_fraction: float = 0.5,
+    warmup_fraction: float = 0,
     estimate_tokens: int | None = None,
     include_draft_kv_cache: bool = False,
     models_data: dict[str, Any] | None = None,
-    include_underfilled: bool = False,
+    include_underfilled: bool = True,
 ) -> dict[str, Any]:
     data = models_data or load_models_data()
     models = models_by_id(data)

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from kvcache_sim.calculator import calculate_cache_size, load_models_data, models_by_id
-from kvcache_sim.cpp_backend import _build_path_for_source
+from kvcache_sim.cpp_backend import _build_path_for_source, _write_binary_trace, ensure_cpp_simulator
 from kvcache_sim.plan import build_execution_plan
 from kvcache_sim.policies import simulate_policy
 from kvcache_sim._resources import package_resource_path, user_temp_suffix
@@ -208,7 +208,25 @@ class SweepAndCliTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.models_data = load_models_data()
 
-    def test_run_sweep_uses_fixed_50_percent_window_and_omits_underfilled_larger_budgets(self) -> None:
+    def test_run_sweep_defaults_to_global_hit_rate_and_includes_underfilled_budgets(self) -> None:
+        trace = make_trace(["A"], ["A"], ["A"], ["A"])
+        result = run_sweep(
+            trace,
+            model_id="qwen3-32b",
+            precision="bf16_fp16",
+            budgets_gib=[0.00025, 0.0005],
+            policies=["lru"],
+            backend="python",
+            models_data=self.models_data,
+        )
+
+        self.assertEqual(result["metadata"]["warmupFraction"], 0)
+        self.assertEqual(result["metadata"]["warmupRequests"], 0)
+        self.assertEqual(result["metadata"]["measurementWindow"], "all_requests")
+        self.assertEqual(result["metadata"]["underfilledBudgetPolicy"], "include_from_empty_cache")
+        self.assertEqual([point["cacheBlocks"] for point in result["points"]], [1])
+
+    def test_run_sweep_can_use_fixed_50_percent_window_and_omit_underfilled_larger_budgets(self) -> None:
         trace = make_trace(["A"], ["A"], ["B"], ["C"])
         result = run_sweep(
             trace,
@@ -217,6 +235,8 @@ class SweepAndCliTests(unittest.TestCase):
             budgets_gib=[0.00025, 0.0005, 0.001],
             policies=["fifo", "lru", "optimal"],
             backend="python",
+            warmup_fraction=0.5,
+            include_underfilled=False,
             models_data=self.models_data,
         )
 
@@ -243,7 +263,7 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertEqual(result["metadata"]["warmupRequests"], 0)
         self.assertEqual(result["metadata"]["measurementWindow"], "all_requests")
         self.assertEqual(result["metadata"]["underfilledBudgetPolicy"], "include_from_empty_cache")
-        self.assertEqual([point["cacheBlocks"] for point in result["points"]], [1, 2])
+        self.assertEqual([point["cacheBlocks"] for point in result["points"]], [1])
         self.assertEqual(result["points"][0]["results"]["lru"]["totalTokens"], 4)
         self.assertEqual(result["points"][0]["results"]["lru"]["hitTokens"], 3)
 
@@ -296,6 +316,8 @@ class SweepAndCliTests(unittest.TestCase):
             budgets_gib=[0.00025],
             jobs=1,
             backend="python",
+            warmup_fraction=0.5,
+            include_underfilled=False,
             models_data=self.models_data,
         )
         cpp_result = run_sweep(
@@ -304,12 +326,46 @@ class SweepAndCliTests(unittest.TestCase):
             precision="bf16_fp16",
             budgets_gib=[0.00025],
             backend="cpp",
+            warmup_fraction=0.5,
+            include_underfilled=False,
             models_data=self.models_data,
         )
 
         self.assertEqual(cpp_result["metadata"]["backend"], "cpp")
         self.assertEqual(python_result["points"], cpp_result["points"])
         self.assertEqual(python_result["hitRateCeiling"], cpp_result["hitRateCeiling"])
+
+    def test_cpp_backend_reports_ceiling_for_unlimited_capacity(self) -> None:
+        if not shutil.which("c++"):
+            self.skipTest("c++ compiler is not available")
+        trace = make_trace(["A"], ["A"], ["B"], ["A"])
+        binary = ensure_cpp_simulator()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            files = _write_binary_trace(trace, Path(tmpdir))
+            base = [
+                str(binary),
+                "--ids",
+                str(files.ids),
+                "--tokens",
+                str(files.tokens),
+                "--request-ends",
+                str(files.request_ends),
+                "--request-count",
+                str(trace.request_count),
+                "--total-blocks",
+                str(len(trace.ids)),
+                "--warmup-requests",
+                "0",
+            ]
+            omitted = subprocess.run([*base, "--policy", "lru"], check=True, text=True, capture_output=True)
+            explicit = subprocess.run([*base, "--policy", "lru", "--capacity", "-1"], check=True, text=True, capture_output=True)
+
+        omitted_payload = json.loads(omitted.stdout)
+        explicit_payload = json.loads(explicit.stdout)
+        self.assertEqual(omitted_payload["policy"], "ceiling")
+        self.assertEqual(omitted_payload["cacheBlocks"], -1)
+        self.assertEqual(omitted_payload["hitRate"], explicit_payload["hitRate"])
+        self.assertEqual(omitted_payload["hitTokens"], 2)
 
     def test_cli_outputs_table_by_default_and_json_when_requested(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -348,8 +404,10 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertIn("FIFO hit", table.stdout)
         parsed = json.loads(as_json.stdout)
         self.assertEqual(parsed["metadata"]["modelId"], "qwen3-32b")
+        self.assertEqual(parsed["metadata"]["warmupFraction"], 0)
+        self.assertEqual(parsed["metadata"]["measurementWindow"], "all_requests")
         self.assertEqual(parsed["points"][0]["cacheBlocks"], 1)
-        self.assertIn("Measurement: hit rates use the last 50% of requests", table.stdout)
+        self.assertIn("Measurement: hit rates use all requests", table.stdout)
         self.assertIn("Speedup: 1.0x means no-cache prefill throughput", table.stdout)
 
     def test_cli_run_command_matches_sweep_alias(self) -> None:
@@ -384,6 +442,31 @@ class SweepAndCliTests(unittest.TestCase):
             sweep_result = subprocess.run([sys.executable, "-m", "kvcache_sim", "sweep", *args], cwd=Path(__file__).resolve().parents[1], check=True, text=True, capture_output=True)
 
         self.assertEqual(json.loads(run_result.stdout)["points"], json.loads(sweep_result.stdout)["points"])
+
+    def test_plugin_cli_reports_unsupported_dataset_format(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = Path(tmpdir) / "bad.jsonl"
+            output_path = Path(tmpdir) / "prompts.jsonl"
+            input_path.write_text(json.dumps({"title": "missing prompt shape"}) + "\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "plugins" / "kv_cache_hit_rate_plugin.py"),
+                    "normalize",
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                ],
+                cwd=REPO_ROOT,
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported dataset format", result.stderr)
+        self.assertIn("Supported dataset formats", result.stderr)
 
 
 class TempPathTests(unittest.TestCase):

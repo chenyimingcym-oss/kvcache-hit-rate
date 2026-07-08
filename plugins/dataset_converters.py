@@ -11,6 +11,16 @@ from typing import Any, Iterable, Iterator, Optional
 
 
 DATASET_FORMATS = ("auto", "jsonl", "openai", "sharegpt", "text")
+SUPPORTED_DATASET_FORMATS = (
+    "Supported dataset formats: prompt JSONL records with `prompt`, `text`, "
+    "or `messages`; OpenAI chat records with `messages` or `body.messages`; "
+    "ShareGPT records with `conversations`; JSON string records when "
+    "`--dataset-format text` is selected."
+)
+
+
+class UnsupportedDatasetFormatError(ValueError):
+    """Raised when the input dataset has no records in a supported shape."""
 
 _SHAREGPT_ROLE_MAP = {
     "human": "user",
@@ -120,7 +130,10 @@ def detect_dataset_format(record: Any) -> str:
     if isinstance(record, str):
         return "text"
     if not isinstance(record, dict):
-        return "text"
+        raise UnsupportedDatasetFormatError(
+            f"cannot auto-detect dataset format for {type(record).__name__} record. "
+            f"{SUPPORTED_DATASET_FORMATS}"
+        )
     if "conversations" in record or "conversation" in record:
         return "sharegpt"
     if isinstance(record.get("messages"), list):
@@ -178,7 +191,10 @@ def normalize_dataset_record(
                 output["messages"] = messages
             return output
         else:
-            raise ValueError("JSONL record does not contain prompt, text, or messages")
+            raise UnsupportedDatasetFormatError(
+                "JSONL record does not contain prompt, text, or messages. "
+                f"{SUPPORTED_DATASET_FORMATS}"
+            )
 
     output = {"request_id": request_id, "prompt": prompt}
     if keep_messages and isinstance(record.get("messages"), list):
@@ -198,7 +214,12 @@ def iter_dataset_records(input_path: str | Path) -> Iterator[tuple[int, Any]]:
                 break
         source.seek(0)
         if first == "[":
-            payload = json.load(source)
+            try:
+                payload = json.load(source)
+            except json.JSONDecodeError as exc:
+                raise UnsupportedDatasetFormatError(
+                    f"input is not valid JSON: {exc}. {SUPPORTED_DATASET_FORMATS}"
+                ) from exc
             if not isinstance(payload, list):
                 raise ValueError("top-level JSON array expected")
             for index, record in enumerate(payload):
@@ -208,7 +229,13 @@ def iter_dataset_records(input_path: str | Path) -> Iterator[tuple[int, Any]]:
         for index, raw in enumerate(source):
             line = raw.strip()
             if line:
-                yield index, json.loads(line)
+                try:
+                    yield index, json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise UnsupportedDatasetFormatError(
+                        f"line {index + 1} is not valid JSONL: {exc}. "
+                        f"{SUPPORTED_DATASET_FORMATS}"
+                    ) from exc
 
 
 def convert_dataset(
@@ -247,6 +274,12 @@ def convert_dataset(
             if max_records and total >= max_records:
                 break
 
+    if total == 0:
+        raise UnsupportedDatasetFormatError(
+            f"no supported dataset records were found in {input_path}; skipped {skipped} record(s). "
+            f"{SUPPORTED_DATASET_FORMATS}"
+        )
+
     return {"total": total, "skipped": skipped, "output": output_path}
 
 
@@ -272,14 +305,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    stats = convert_dataset(
-        args.input,
-        args.output,
-        dataset_format=args.dataset_format,
-        keep_messages=not args.drop_messages,
-        max_records=args.max_records,
-        strict=args.strict,
-    )
+    try:
+        stats = convert_dataset(
+            args.input,
+            args.output,
+            dataset_format=args.dataset_format,
+            keep_messages=not args.drop_messages,
+            max_records=args.max_records,
+            strict=args.strict,
+        )
+    except UnsupportedDatasetFormatError as exc:
+        print(f"unsupported dataset format: {exc}", file=sys.stderr)
+        return 1
     print(json.dumps(stats, ensure_ascii=False, default=str))
     return 0
 

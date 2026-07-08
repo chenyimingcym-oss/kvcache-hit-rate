@@ -106,7 +106,8 @@ python3 kv_cache_hit_rate_plugin.py run \
 The unified plugin defaults to cold-start/global hit-rate semantics:
 `--warmup-fraction 0` and underfilled budgets included. Use
 `--warmup-fraction 0.5 --exclude-underfilled` to match the web simulator's
-default measurement window.
+default measurement window. Simulation output includes `hitRateCeiling`, the
+theoretical highest prefix-cache hit rate with unlimited KV cache capacity.
 
 Input prompt JSONL records should contain either a `prompt` string, or a
 `messages` list when `--use-chat-template` is set.

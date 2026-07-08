@@ -8,7 +8,10 @@
 pip install kvcache-simulator
 ```
 
-The default simulation backend compiles and runs a bundled C++ replay core on first use. You need a local C++ compiler such as `c++` or `clang++`. If a compiler is not available, use `--backend python`.
+The default simulation backend is Python so the command can report cold-start
+global hit rate from an empty cache. Use `--backend cpp --exclude-underfilled`
+when you want the bundled C++ replay core; it compiles on first use and needs a
+local C++ compiler such as `c++` or `clang++`.
 
 ## Quick Start
 
@@ -77,8 +80,10 @@ Optional fields:
 | `--estimate-tokens N` | Override the token count used for token-dependent bytes/token formulas. By default the trace average input length is used. |
 | `--budgets-gib A,B,C` | Comma-separated KV cache memory budgets in GiB. Default matches the web budget sweep: `1,2,4,...,16384`. |
 | `--policies fifo,lru,optimal` | Eviction policies to simulate. Defaults to all three. |
-| `--backend cpp\|python` | Simulation backend. Default is `cpp`; use `python` for debugging or machines without a compiler. |
+| `--backend cpp\|python` | Simulation backend. Default is `python`; use `cpp` with `--exclude-underfilled` for faster fixed-window sweeps. |
 | `--jobs N` | Number of worker processes for the Python backend. The C++ backend runs one batch process and ignores this option. |
+| `--warmup-fraction X` | Fraction of requests to skip before measuring hit rate. Default is `0`, which measures all requests from a cold cache. |
+| `--exclude-underfilled` | Omit budgets where the cache was not full before measurement. Use with `--warmup-fraction 0.5` to match the old web-style measurement window. |
 | `--no-progress` | Disable terminal progress output. Progress is written to stderr only when stderr is interactive, so JSON stdout stays valid. |
 | `--format table\|json` | Output format. Default is `table`. |
 | `--output PATH` | Write output to a file. Default `-` prints to stdout. |
@@ -87,16 +92,67 @@ Optional fields:
 
 ## Output Semantics
 
-- Hit rate is measured over the last 50% of requests.
-- Budget points that do not fill the cache before that measurement window are omitted, because they are not under memory pressure yet.
+- Hit rate is measured over all requests by default (`--warmup-fraction 0`).
+- Underfilled budget points are included by default, so cold-start/global hit
+  rate is reported even when the cache is not full before the first request.
+- Every result includes `hitRateCeiling`, the theoretical highest prefix-cache
+  hit rate with unlimited KV cache capacity.
 - Hit tokens count only the longest continuous cached prefix of each request. If a middle block misses, later blocks in that same request do not count as prefill hits even if their ids are already cached.
 - `speedup` is an ideal prefill-only upper bound: `1 / (1 - hit_rate)`. `1.0x` means no-cache prefill throughput where every prefill input token is computed. It does not include decode, KV lookup, network, batching, scheduling, or memory bandwidth overhead.
 
 ## Performance Notes
 
-The default C++ backend runs all cache-budget points in one batch after loading the trace and building the prefix trie once. This is usually faster than the Python backend, especially on large traces.
+The C++ backend runs all cache-budget points in one batch after loading the
+trace and building the prefix trie once. This is usually faster than the Python
+backend, especially on large traces.
 
 `--jobs` applies only to the Python backend. It parallelizes independent `(policy, cache budget)` simulation tasks. More jobs are not always faster: the default budget sweep has only a small number of budget points, tasks have uneven runtimes, and large traces can become memory-bandwidth limited.
+
+## Bundled C++ Core
+
+Most users should call `kvcache-simulator run` instead of invoking the bundled
+C++ binary directly. The Python wrapper writes compact binary trace files,
+compiles the bundled source when needed, and calls the C++ core in batch mode:
+
+```bash
+kv-cache-lab-native-sim \
+  --policy batch \
+  --ids ids.u32 \
+  --tokens tokens.u16 \
+  --request-ends request_ends.u32 \
+  --request-count 1000 \
+  --total-blocks 64000 \
+  --warmup-requests 0 \
+  --capacities 1024,2048,4096 \
+  --policies fifo,lru,optimal \
+  --progress
+```
+
+Supported direct C++ policies are `fifo`, `lru`, `optimal`, `all`, `ceiling`,
+`batch`, and the maintenance command `build-next`. In batch mode:
+
+- `--capacities A,B,C` is a comma-separated list of cache capacities in blocks.
+- `--policies fifo,lru,optimal` selects which eviction policies to emit.
+- `--progress` writes `KV_PROGRESS done total label` lines to stderr.
+- The JSON output contains `ceiling` plus one entry in `points` for each
+  non-negative capacity.
+
+For single-policy C++ runs, omit `--capacity` or pass `--capacity -1` to report
+the unlimited-capacity theoretical ceiling directly:
+
+```bash
+kv-cache-lab-native-sim \
+  --policy lru \
+  --ids ids.u32 \
+  --tokens tokens.u16 \
+  --request-ends request_ends.u32 \
+  --request-count 1000 \
+  --total-blocks 64000 \
+  --warmup-requests 0
+```
+
+That command returns a `policy: "ceiling"` JSON object with `cacheBlocks: -1`.
+Passing `--policy ceiling` is equivalent.
 
 ## Limits
 

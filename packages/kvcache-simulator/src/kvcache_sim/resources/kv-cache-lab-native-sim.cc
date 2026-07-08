@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -25,7 +26,11 @@ struct Options {
   std::uint64_t warmup_event_start = 0;
   std::uint64_t request_count = 0;
   std::uint64_t warmup_requests = 0;
-  std::uint32_t capacity = 0;
+  std::int64_t capacity = -1;
+  std::string capacities_csv;
+  std::string policies_csv;
+  bool capacity_provided = false;
+  bool progress = false;
 };
 
 struct Result {
@@ -54,6 +59,43 @@ std::uint64_t parse_u64(const char* value, const std::string& name) {
   return static_cast<std::uint64_t>(parsed);
 }
 
+std::int64_t parse_i64(const char* value, const std::string& name) {
+  if (!value || *value == '\0') throw std::runtime_error("Invalid integer for " + name);
+  char* end = nullptr;
+  const long long parsed = std::strtoll(value, &end, 10);
+  if (end && *end != '\0') throw std::runtime_error("Invalid integer for " + name);
+  return static_cast<std::int64_t>(parsed);
+}
+
+std::vector<std::string> split_csv_strings(const std::string& value) {
+  std::vector<std::string> parts;
+  std::size_t start = 0;
+  while (start <= value.size()) {
+    const std::size_t comma = value.find(',', start);
+    const std::size_t end = comma == std::string::npos ? value.size() : comma;
+    if (end > start) parts.push_back(value.substr(start, end - start));
+    if (comma == std::string::npos) break;
+    start = comma + 1;
+  }
+  return parts;
+}
+
+std::vector<std::int64_t> split_csv_i64(const std::string& value, const std::string& name) {
+  std::vector<std::int64_t> parts;
+  for (const std::string& part : split_csv_strings(value)) {
+    parts.push_back(parse_i64(part.c_str(), name));
+  }
+  return parts;
+}
+
+std::uint32_t checked_capacity(std::int64_t capacity) {
+  if (capacity < 0) throw std::runtime_error("capacity is unlimited");
+  if (capacity > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
+    throw std::runtime_error("--capacity exceeds uint32 range");
+  }
+  return static_cast<std::uint32_t>(capacity);
+}
+
 Options parse_args(int argc, char** argv) {
   Options options;
   for (int index = 1; index < argc; index += 1) {
@@ -71,17 +113,20 @@ Options parse_args(int argc, char** argv) {
     else if (arg == "--warmup-event-start") options.warmup_event_start = parse_u64(require_value(arg), arg);
     else if (arg == "--request-count") options.request_count = parse_u64(require_value(arg), arg);
     else if (arg == "--warmup-requests") options.warmup_requests = parse_u64(require_value(arg), arg);
-    else if (arg == "--capacity") options.capacity = static_cast<std::uint32_t>(parse_u64(require_value(arg), arg));
+    else if (arg == "--capacity") {
+      options.capacity = parse_i64(require_value(arg), arg);
+      options.capacity_provided = true;
+    }
+    else if (arg == "--capacities") options.capacities_csv = require_value(arg);
+    else if (arg == "--policies") options.policies_csv = require_value(arg);
+    else if (arg == "--progress") options.progress = true;
     else throw std::runtime_error("Unknown argument: " + arg);
   }
   if (options.policy.empty() || options.ids_path.empty() || options.tokens_path.empty() || options.total_blocks == 0) {
-    throw std::runtime_error("Usage: kv-cache-lab-native-sim --policy fifo|lru|optimal|all|ceiling --ids PATH --tokens PATH --total-blocks N --request-ends PATH --request-count N --capacity N [--next PATH]");
+    throw std::runtime_error("Usage: kv-cache-lab-native-sim --policy fifo|lru|optimal|all|ceiling|batch --ids PATH --tokens PATH --total-blocks N --request-ends PATH --request-count N [--capacity N|--capacities A,B] [--policies fifo,lru,optimal] [--next PATH]");
   }
   if (options.policy != "build-next" && (options.request_ends_path.empty() || options.request_count == 0)) {
     throw std::runtime_error("--request-ends and --request-count are required");
-  }
-  if (options.policy != "build-next" && options.next_path.empty()) {
-    throw std::runtime_error("--next is required");
   }
   return options;
 }
@@ -549,7 +594,7 @@ AllResults simulate_all(const SimulationInput& input, std::uint32_t capacity, co
   };
 }
 
-void print_result(const std::string& policy, std::uint64_t cache_blocks, const Result& result, std::uint64_t trie_node_count, std::uint64_t warmup_requests) {
+void print_result(const std::string& policy, std::int64_t cache_blocks, const Result& result, std::uint64_t trie_node_count, std::uint64_t warmup_requests) {
   std::cout << "{"
             << "\"policy\":\"" << policy << "\","
             << "\"cacheBlocks\":" << cache_blocks << ","
@@ -561,11 +606,11 @@ void print_result(const std::string& policy, std::uint64_t cache_blocks, const R
             << "\"hitRate\":" << std::setprecision(17) << result.hit_rate() << ","
             << "\"usefulCacheBlockSamples\":" << result.useful_cache_block_samples << ","
             << "\"usefulCacheSamples\":" << result.useful_cache_samples << ","
-            << "\"usefulCacheRate\":" << std::setprecision(17) << result.useful_cache_rate(cache_blocks)
+            << "\"usefulCacheRate\":" << std::setprecision(17) << result.useful_cache_rate(cache_blocks < 0 ? 0 : static_cast<std::uint64_t>(cache_blocks))
             << "}\n";
 }
 
-void print_named_result(const char* policy, std::uint64_t cache_blocks, const Result& result, std::uint64_t warmup_requests) {
+void print_named_result(const char* policy, std::int64_t cache_blocks, const Result& result, std::uint64_t warmup_requests) {
   std::cout << "\"policy\":\"" << policy << "\","
             << "\"cacheBlocks\":" << cache_blocks << ","
             << "\"warmupRequests\":" << warmup_requests << ","
@@ -575,10 +620,10 @@ void print_named_result(const char* policy, std::uint64_t cache_blocks, const Re
             << "\"hitRate\":" << std::setprecision(17) << result.hit_rate() << ","
             << "\"usefulCacheBlockSamples\":" << result.useful_cache_block_samples << ","
             << "\"usefulCacheSamples\":" << result.useful_cache_samples << ","
-            << "\"usefulCacheRate\":" << std::setprecision(17) << result.useful_cache_rate(cache_blocks);
+            << "\"usefulCacheRate\":" << std::setprecision(17) << result.useful_cache_rate(cache_blocks < 0 ? 0 : static_cast<std::uint64_t>(cache_blocks));
 }
 
-void print_all_results(std::uint64_t cache_blocks, const AllResults& results, std::uint64_t trie_node_count, std::uint64_t warmup_requests) {
+void print_all_results(std::int64_t cache_blocks, const AllResults& results, std::uint64_t trie_node_count, std::uint64_t warmup_requests) {
   std::cout << "{"
             << "\"cacheBlocks\":" << cache_blocks << ","
             << "\"trieNodeCount\":" << trie_node_count << ","
@@ -589,6 +634,76 @@ void print_all_results(std::uint64_t cache_blocks, const AllResults& results, st
   std::cout << "},\"optimal\":{";
   print_named_result("optimal", cache_blocks, results.optimal, warmup_requests);
   std::cout << "}}\n";
+}
+
+void write_named_result(std::ostream& out, const char* policy, std::int64_t cache_blocks, const Result& result, std::uint64_t warmup_requests) {
+  out << "\"policy\":\"" << policy << "\","
+      << "\"cacheBlocks\":" << cache_blocks << ","
+      << "\"warmupRequests\":" << warmup_requests << ","
+      << "\"measurementStartRequest\":" << result.measurement_start_request << ","
+      << "\"hitTokens\":" << result.hit_tokens << ","
+      << "\"totalTokens\":" << result.total_tokens << ","
+      << "\"hitRate\":" << std::setprecision(17) << result.hit_rate() << ","
+      << "\"usefulCacheBlockSamples\":" << result.useful_cache_block_samples << ","
+      << "\"usefulCacheSamples\":" << result.useful_cache_samples << ","
+      << "\"usefulCacheRate\":" << std::setprecision(17) << result.useful_cache_rate(cache_blocks < 0 ? 0 : static_cast<std::uint64_t>(cache_blocks));
+}
+
+Result simulate_named_policy(const SimulationInput& input, const std::string& policy, std::uint32_t capacity, const Options& options) {
+  if (policy == "fifo") return simulate_fifo(input, capacity, options);
+  if (policy == "lru") return simulate_trie_policy(input, capacity, false, options);
+  if (policy == "optimal") return simulate_trie_policy(input, capacity, true, options);
+  throw std::runtime_error("Unsupported batch policy: " + policy);
+}
+
+std::vector<std::string> selected_policies(const Options& options) {
+  std::vector<std::string> policies = options.policies_csv.empty()
+    ? std::vector<std::string>{"fifo", "lru", "optimal"}
+    : split_csv_strings(options.policies_csv);
+  for (const std::string& policy : policies) {
+    if (policy != "fifo" && policy != "lru" && policy != "optimal") {
+      throw std::runtime_error("Unsupported batch policy: " + policy);
+    }
+  }
+  return policies;
+}
+
+void print_batch_results(const SimulationInput& input, const Options& options, std::uint64_t trie_node_count) {
+  const std::vector<std::string> policies = selected_policies(options);
+  const std::vector<std::int64_t> capacities = options.capacities_csv.empty()
+    ? std::vector<std::int64_t>{-1}
+    : split_csv_i64(options.capacities_csv, "--capacities");
+  const Result ceiling = simulate_ceiling(input, options);
+
+  std::cout << "{"
+            << "\"uniqueBlocks\":" << input.unique_blocks << ","
+            << "\"trieNodeCount\":" << trie_node_count << ","
+            << "\"ceiling\":{";
+  write_named_result(std::cout, "ceiling", -1, ceiling, options.warmup_requests);
+  std::cout << "},\"points\":[";
+
+  bool first_point = true;
+  std::uint64_t completed = 0;
+  const std::uint64_t total = capacities.size();
+  for (std::int64_t raw_capacity : capacities) {
+    completed += 1;
+    if (options.progress) {
+      std::cerr << "KV_PROGRESS " << completed << " " << total << " capacity " << raw_capacity << "\n";
+    }
+    if (raw_capacity < 0) continue;
+    const std::uint32_t capacity = checked_capacity(raw_capacity);
+    if (!first_point) std::cout << ",";
+    first_point = false;
+    std::cout << "{\"cacheBlocks\":" << raw_capacity << ",\"trieNodeCount\":" << trie_node_count;
+    for (const std::string& policy : policies) {
+      const Result result = simulate_named_policy(input, policy, capacity, options);
+      std::cout << ",\"" << policy << "\":{";
+      write_named_result(std::cout, policy.c_str(), raw_capacity, result, options.warmup_requests);
+      std::cout << "}";
+    }
+    std::cout << "}";
+  }
+  std::cout << "]}\n";
 }
 
 }  // namespace
@@ -604,11 +719,14 @@ int main(int argc, char** argv) {
 
     const SimulationInput input = load_simulation_input(options);
     const std::uint64_t trie_node_count = input.prefix.parent.size();
-    if (options.policy == "ceiling") print_result("ceiling", options.capacity, simulate_ceiling(input, options), trie_node_count, options.warmup_requests);
-    else if (options.policy == "fifo") print_result("fifo", options.capacity, simulate_fifo(input, options.capacity, options), trie_node_count, options.warmup_requests);
-    else if (options.policy == "lru") print_result("lru", options.capacity, simulate_trie_policy(input, options.capacity, false, options), trie_node_count, options.warmup_requests);
-    else if (options.policy == "optimal") print_result("optimal", options.capacity, simulate_trie_policy(input, options.capacity, true, options), trie_node_count, options.warmup_requests);
-    else if (options.policy == "all") print_all_results(options.capacity, simulate_all(input, options.capacity, options), trie_node_count, options.warmup_requests);
+    if (options.policy == "batch") print_batch_results(input, options, trie_node_count);
+    else if (options.policy == "ceiling" || !options.capacity_provided || options.capacity < 0) {
+      print_result("ceiling", -1, simulate_ceiling(input, options), trie_node_count, options.warmup_requests);
+    }
+    else if (options.policy == "fifo") print_result("fifo", options.capacity, simulate_fifo(input, checked_capacity(options.capacity), options), trie_node_count, options.warmup_requests);
+    else if (options.policy == "lru") print_result("lru", options.capacity, simulate_trie_policy(input, checked_capacity(options.capacity), false, options), trie_node_count, options.warmup_requests);
+    else if (options.policy == "optimal") print_result("optimal", options.capacity, simulate_trie_policy(input, checked_capacity(options.capacity), true, options), trie_node_count, options.warmup_requests);
+    else if (options.policy == "all") print_all_results(options.capacity, simulate_all(input, checked_capacity(options.capacity), options), trie_node_count, options.warmup_requests);
     else throw std::runtime_error("Unsupported policy: " + options.policy);
     return 0;
   } catch (const std::exception& error) {
