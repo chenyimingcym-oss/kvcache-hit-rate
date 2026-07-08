@@ -11,3 +11,6 @@ transformers>=4.40.0
 
 # SentencePiece - 用于加载需要 sentencepiece 的 tokenizer
 sentencepiece>=0.2.0
+
+# Protobuf - transformers 的 SentencePiece extractor 需要
+protobuf>=4.25.0
