@@ -25,7 +25,8 @@ uv pip install -e .
 ```
 
 This installs both the unified hit-rate CLI and the bundled local simulator package.
-`transformers` and `torch` are needed when converting prompts with a tokenizer.
+Prompt tokenization uses `transformers`; PyTorch is not installed by default to
+avoid pulling large CUDA packages.
 
 ## Quick Checks
 

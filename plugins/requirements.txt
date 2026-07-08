@@ -8,6 +8,3 @@
 
 # HuggingFace Transformers - 用于加载分词器（AutoTokenizer）
 transformers>=4.40.0
-
-# PyTorch - transformers 分词器的底层依赖
-torch>=2.0.0
