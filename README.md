@@ -2,6 +2,9 @@
 
 Standalone repository for KV cache trace generation and hit-rate simulation.
 
+Note: this repository uses part of the code from
+[kvcache-ai/kvcache-blog](https://github.com/kvcache-ai/kvcache-blog).
+
 This repository contains:
 
 - `plugins/`: dataset normalization, prompt-to-trace conversion, and a unified hit-rate plugin CLI.
