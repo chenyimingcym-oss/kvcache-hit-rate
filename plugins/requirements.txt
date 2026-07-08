@@ -8,3 +8,6 @@
 
 # HuggingFace Transformers - 用于加载分词器（AutoTokenizer）
 transformers>=4.40.0
+
+# SentencePiece - 用于加载需要 sentencepiece 的 tokenizer
+sentencepiece>=0.2.0
