@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kvcache-hit-rate"
+version = "0.1.0"
+description = "KV cache trace generation and hit-rate simulation tools."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "kvcache-simulator",
+  "transformers>=4.40.0",
+  "torch>=2.0.0",
+]
+
+[project.scripts]
+kvcache-hit-rate = "plugins.kv_cache_hit_rate_plugin:main"
+
+[tool.setuptools]
+packages = ["plugins"]

@@ -1,0 +1,13 @@
+# KV Cache Hit Rate Plugin 依赖
+#
+# 安装方式:
+#   pip install -r requirements.txt
+#
+# 注意: 本插件还依赖本仓库内的 kvcache-simulator 包，需先安装:
+#   pip install -e ../packages/kvcache-simulator
+
+# HuggingFace Transformers - 用于加载分词器（AutoTokenizer）
+transformers>=4.40.0
+
+# PyTorch - transformers 分词器的底层依赖
+torch>=2.0.0
