@@ -9,8 +9,16 @@ This repository contains:
 
 ## Install
 
+With pip:
+
 ```bash
 python3 -m pip install -e .
+```
+
+With uv:
+
+```bash
+uv pip install -e .
 ```
 
 This installs both the unified hit-rate CLI and the bundled local simulator package.
