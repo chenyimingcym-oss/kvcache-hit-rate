@@ -3,8 +3,8 @@
 # 安装方式:
 #   pip install -r requirements.txt
 #
-# 注意: 本插件还依赖本仓库内的 kvcache-simulator 包，需先安装:
-#   pip install -e ../packages/kvcache-simulator
+# 推荐在仓库根目录安装，这会同时安装插件和内置 simulator:
+#   pip install -e .
 
 # HuggingFace Transformers - 用于加载分词器（AutoTokenizer）
 transformers>=4.40.0

@@ -9,13 +9,20 @@ description = "KV cache trace generation and hit-rate simulation tools."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "kvcache-simulator",
   "transformers>=4.40.0",
   "torch>=2.0.0",
 ]
 
 [project.scripts]
 kvcache-hit-rate = "plugins.kv_cache_hit_rate_plugin:main"
+kvcache-simulator = "kvcache_sim.cli:main"
 
 [tool.setuptools]
-packages = ["plugins"]
+packages = ["plugins", "kvcache_sim", "kvcache_sim.resources"]
+
+[tool.setuptools.package-dir]
+kvcache_sim = "packages/kvcache-simulator/src/kvcache_sim"
+"kvcache_sim.resources" = "packages/kvcache-simulator/src/kvcache_sim/resources"
+
+[tool.setuptools.package-data]
+"kvcache_sim.resources" = ["models.yaml", "kv-cache-lab-native-sim.cc"]

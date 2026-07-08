@@ -10,25 +10,24 @@ This repository contains:
 ## Install
 
 ```bash
-python3 -m pip install -e packages/kvcache-simulator
-python3 -m pip install -r plugins/requirements.txt
+python3 -m pip install -e .
 ```
 
-`transformers` and `torch` are only needed when converting prompts with a tokenizer.
-Trace-only simulation can use the simulator package directly.
+This installs both the unified hit-rate CLI and the bundled local simulator package.
+`transformers` and `torch` are needed when converting prompts with a tokenizer.
 
 ## Quick Checks
 
 ```bash
 python3 -c "from plugins.kvcache_trace_plugin import block_hashes; print(block_hashes([1, 2, 3], block_size=64))"
-python3 plugins/kv_cache_hit_rate_plugin.py --help
-python3 -m kvcache_sim --help
+kvcache-hit-rate --help
+kvcache-simulator --help
 ```
 
 ## Example
 
 ```bash
-python3 plugins/kv_cache_hit_rate_plugin.py simulate \
+kvcache-hit-rate simulate \
   --trace path/to/kvcache_trace.jsonl \
   --model qwen3-32b \
   --kv-precision fp8_int8 \
