@@ -13,6 +13,7 @@ from kvcache_sim.calculator import calculate_cache_size, load_models_data, model
 from kvcache_sim.cpp_backend import _build_path_for_source, _write_binary_trace, ensure_cpp_simulator
 from kvcache_sim.plan import build_execution_plan
 from kvcache_sim.policies import simulate_policy
+from kvcache_sim.plotting import plot_hit_rate_sweep
 from kvcache_sim._resources import package_resource_path, user_temp_suffix
 from kvcache_sim.simulator import run_sweep
 from kvcache_sim.trace import parse_trace_file, parse_trace_lines
@@ -282,6 +283,29 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertEqual([point["cacheBlocks"] for point in result["points"]], [1])
         self.assertEqual(result["points"][0]["gib"], 0.00025)
 
+    def test_plot_hit_rate_sweep_writes_image(self) -> None:
+        try:
+            import matplotlib  # noqa: F401
+        except ImportError:
+            self.skipTest("matplotlib is not installed")
+
+        trace = make_trace(["A"], ["B"], ["A"], ["B"])
+        result = run_sweep(
+            trace,
+            model_id="qwen3-32b",
+            precision="bf16_fp16",
+            budgets_gib=[0.00025],
+            policies=["fifo", "lru", "optimal"],
+            backend="python",
+            models_data=self.models_data,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = plot_hit_rate_sweep(result, Path(tmpdir) / "hit-rate.png")
+
+            self.assertTrue(output.exists())
+            self.assertGreater(output.stat().st_size, 0)
+
     def test_multiprocess_sweep_matches_single_process(self) -> None:
         trace = make_trace(["A"], ["B"], ["A"], ["B"])
         serial = run_sweep(
@@ -409,6 +433,56 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertEqual(parsed["points"][0]["cacheBlocks"], 1)
         self.assertIn("Measurement: hit rates use all requests", table.stdout)
         self.assertIn("Speedup: 1.0x means no-cache prefill throughput", table.stdout)
+
+    def test_cli_plot_command_writes_image_from_json(self) -> None:
+        try:
+            import matplotlib  # noqa: F401
+        except ImportError:
+            self.skipTest("matplotlib is not installed")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result_path = Path(tmpdir) / "result.json"
+            plot_path = Path(tmpdir) / "hit-rate.png"
+            result_path.write_text(
+                json.dumps({
+                    "metadata": {
+                        "modelId": "test-model",
+                        "modelLabel": "Test Model",
+                        "precision": "bf16_fp16",
+                        "precisionLabel": "BF16 / FP16",
+                    },
+                    "hitRateCeiling": 0.75,
+                    "policies": ["lru"],
+                    "points": [
+                        {
+                            "gib": 1,
+                            "cacheBlocks": 1,
+                            "results": {"lru": {"hitRate": 0.5}},
+                        }
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kvcache_sim",
+                    "plot",
+                    "--input",
+                    str(result_path),
+                    "--output",
+                    str(plot_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            self.assertTrue(plot_path.exists())
+            self.assertGreater(plot_path.stat().st_size, 0)
 
     def test_cli_run_command_matches_sweep_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

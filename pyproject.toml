@@ -13,6 +13,9 @@ dependencies = [
   "sentencepiece>=0.2.0",
 ]
 
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+
 [project.scripts]
 kvcache-hit-rate = "plugins.kv_cache_hit_rate_plugin:main"
 kvcache-simulator = "kvcache_sim.cli:main"

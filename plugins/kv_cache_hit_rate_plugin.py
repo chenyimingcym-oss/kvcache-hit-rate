@@ -293,6 +293,18 @@ class KVCacheHitRatePlugin:
             )
             return self.simulate_trace(trace_path, **simulate_kwargs)
 
+    def plot_result(
+        self,
+        result: dict[str, Any],
+        output_path: Union[str, Path],
+        *,
+        title: Optional[str] = None,
+    ) -> Path:
+        _ensure_simulator_importable()
+        from kvcache_sim.plotting import plot_hit_rate_sweep
+
+        return plot_hit_rate_sweep(result, output_path, title=title)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -327,6 +339,11 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--trace", type=Path, required=True)
     add_simulator_args(simulate)
     simulate.add_argument("--max-records", type=int, default=0)
+
+    plot = subparsers.add_parser("plot", help="Plot hit-rate curves from a simulation JSON result")
+    plot.add_argument("--input", type=Path, required=True)
+    plot.add_argument("--output", type=Path, required=True)
+    plot.add_argument("--title", default=None)
 
     run = subparsers.add_parser(
         "run",
@@ -383,6 +400,7 @@ def add_simulator_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--include-draft-kv-cache", action="store_true")
     parser.add_argument("--max-events", type=int, default=0)
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument("--plot-output", type=Path, default=None)
 
 
 def plugin_from_args(args: argparse.Namespace) -> KVCacheHitRatePlugin:
@@ -436,6 +454,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             _write_json(stats, None)
             return 0
 
+        if args.command == "plot":
+            _ensure_simulator_importable()
+            from kvcache_sim.plotting import plot_hit_rate_sweep
+
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+            plot_hit_rate_sweep(payload, args.output, title=args.title)
+            return 0
+
         plugin = plugin_from_args(args)
         if args.command == "convert":
             stats = plugin.prompts_jsonl_to_trace(
@@ -451,6 +477,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.command == "simulate":
             result = plugin.simulate_trace(args.trace, **simulator_kwargs(args))
+            if args.plot_output:
+                plugin.plot_result(result, args.plot_output)
             _write_json(result, args.output)
             return 0
 
@@ -464,6 +492,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 strict=args.strict,
                 **simulator_kwargs(args),
             )
+            if args.plot_output:
+                plugin.plot_result(result, args.plot_output)
             _write_json(result, args.output)
             return 0
     except UnsupportedDatasetFormatError as exc:

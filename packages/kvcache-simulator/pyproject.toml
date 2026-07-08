@@ -28,6 +28,9 @@ classifiers = [
   "Topic :: System :: Benchmark",
 ]
 
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+
 [project.urls]
 Homepage = "https://kvcache.ai/"
 Repository = "https://github.com/kvcache-ai/kvcache-blog/tree/main/packages/kvcache-simulator"

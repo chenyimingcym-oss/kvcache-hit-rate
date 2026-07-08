@@ -103,6 +103,29 @@ python3 kv_cache_hit_rate_plugin.py run \
   --output /tmp/kvcache_hit_rate.json
 ```
 
+Write a hit-rate plot during simulation:
+
+```bash
+python3 kv_cache_hit_rate_plugin.py simulate \
+  --trace ../test/kvcache_trace_blksz64.sample.jsonl \
+  --model qwen3-32b \
+  --kv-precision fp8_int8 \
+  --budgets-gib 1,2,4,8 \
+  --plot-output /tmp/kvcache_hit_rate.png
+```
+
+Or plot from an existing simulation JSON:
+
+```bash
+python3 kv_cache_hit_rate_plugin.py plot \
+  --input /tmp/kvcache_hit_rate.json \
+  --output /tmp/kvcache_hit_rate.png
+```
+
+The plot uses finite KV cache budget as the x-axis and formats KV Cache Hit
+Rate as percentages on the y-axis. Unlimited capacity is drawn as a horizontal
+ceiling/asymptote line instead of a regular budget point.
+
 The unified plugin defaults to cold-start/global hit-rate semantics:
 `--warmup-fraction 0` and underfilled budgets included. Use
 `--warmup-fraction 0.5 --exclude-underfilled` to match the web simulator's

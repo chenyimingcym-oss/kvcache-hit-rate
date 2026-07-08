@@ -45,6 +45,43 @@ kvcache-simulator list-models
 
 `run` is the main command. It evaluates the selected trace across a set of KV cache memory budgets. `sweep` is kept as an alias for users who prefer benchmark terminology.
 
+## Plot Hit-Rate Curves
+
+Install the optional plotting dependency:
+
+```bash
+pip install "kvcache-simulator[plot]"
+```
+
+Generate a plot while running a sweep:
+
+```bash
+kvcache-simulator run \
+  --trace trace.jsonl.gz \
+  --model qwen3-32b \
+  --kv-precision fp8_int8 \
+  --plot-output hit-rate.png
+```
+
+Or plot from an existing JSON result:
+
+```bash
+kvcache-simulator run \
+  --trace trace.jsonl.gz \
+  --model qwen3-32b \
+  --kv-precision fp8_int8 \
+  --format json \
+  --output result.json
+
+kvcache-simulator plot \
+  --input result.json \
+  --output hit-rate.png
+```
+
+The x-axis is finite KV cache budget in GiB. The y-axis is KV Cache Hit Rate
+formatted as a percentage. Unlimited capacity is drawn separately as a
+horizontal `Unlimited / ceiling` asymptote, not as a regular budget point.
+
 ## Input Trace Format
 
 Input is JSONL or JSONL.GZ, one request per line. The minimal accepted format is:

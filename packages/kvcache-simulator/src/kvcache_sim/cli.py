@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 
 from .calculator import load_models_data, models_by_id
 from .formatting import render_json, render_table
+from .plotting import plot_hit_rate_sweep
 from .progress import ProgressBar
 from .simulator import DEFAULT_BUDGETS_GIB, DEFAULT_POLICIES, run_sweep
 from .trace import parse_trace_file
@@ -46,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--no-progress", action="store_true", help="Disable terminal progress output")
         command.add_argument("--format", choices=["table", "json"], default="table", help="Output format (default: table)")
         command.add_argument("--output", "-o", default="-", help="Output path, or - for stdout")
+        command.add_argument("--plot-output", default=None, help="Write a PNG/SVG/PDF hit-rate plot to this path")
         command.add_argument("--models-yaml", default=None, help="Override models.yaml path")
         command.add_argument("--max-records", type=int, default=0, help="Stop after this many valid requests (debug/testing)")
         command.add_argument("--max-events", type=int, default=0, help="Stop after this many trace blocks (debug/testing)")
@@ -58,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_models = subparsers.add_parser("list-models", help="List supported model ids")
     list_models.add_argument("--models-yaml", default=None, help="Override models.yaml path")
+
+    plot = subparsers.add_parser("plot", help="Plot hit-rate curves from a sweep JSON result")
+    plot.add_argument("--input", "-i", required=True, help="Sweep JSON result path")
+    plot.add_argument("--output", "-o", required=True, help="PNG/SVG/PDF output path")
+    plot.add_argument("--title", default=None, help="Optional chart title")
 
     return parser
 
@@ -94,6 +102,8 @@ def run_sweep_command(args: argparse.Namespace) -> int:
         )
         rendered = render_json(result) if args.format == "json" else render_table(result)
         _write_output(rendered, args.output)
+        if args.plot_output:
+            plot_hit_rate_sweep(result, args.plot_output)
         progress.finish()
         return 0
     except Exception:
@@ -109,6 +119,12 @@ def run_list_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_plot(args: argparse.Namespace) -> int:
+    payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+    plot_hit_rate_sweep(payload, args.output, title=args.title)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -116,5 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_sweep_command(args)
     if args.command == "list-models":
         return run_list_models(args)
+    if args.command == "plot":
+        return run_plot(args)
     parser.print_help(sys.stderr)
     return 2
