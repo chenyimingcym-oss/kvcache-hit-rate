@@ -62,4 +62,5 @@ from a cold cache over all requests. Use `--warmup-fraction 0.5
 The JSON result also includes `hitRateCeiling`, the theoretical highest hit
 rate when KV cache capacity is unlimited.
 
+See `PARAMETERS.md` for a consolidated command-line parameter reference.
 See `plugins/README.md` and `packages/kvcache-simulator/README.md` for more details.

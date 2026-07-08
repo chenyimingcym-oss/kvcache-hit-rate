@@ -9,6 +9,8 @@ workflow:
 4. prompt JSONL -> simulator trace JSONL
 5. trace JSONL -> KV cache hit-rate sweep
 
+See `../PARAMETERS.md` for the consolidated CLI parameter reference.
+
 The block hash algorithm matches `../test/prompts_to_kvcache_trace.py`.
 
 ## Python API

@@ -2,6 +2,8 @@
 
 `kvcache-simulator` runs the KVCache.AI hit-rate simulator locally on JSONL traces. It uses the same model accounting formulas as the KV Cache Size Calculator and the same prefix-aware hit-rate semantics as the KV Cache Hit Rate Simulator.
 
+See `../../PARAMETERS.md` for the consolidated CLI parameter reference.
+
 ## Installation
 
 ```bash
