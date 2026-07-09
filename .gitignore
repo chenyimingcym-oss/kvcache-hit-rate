@@ -16,3 +16,4 @@ dist/
 *.json
 !package.json
 !**/package.json
+test/

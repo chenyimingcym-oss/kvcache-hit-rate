@@ -70,6 +70,33 @@ def _ensure_simulator_importable() -> None:
             sys.path.insert(0, simulator_src_text)
 
 
+def _plugin_models_data(models_yaml: Optional[Union[str, Path]] = None) -> dict[str, Any]:
+    _ensure_simulator_importable()
+    from kvcache_sim.calculator import load_models_data
+
+    if models_yaml:
+        return load_models_data(models_yaml)
+    repo_models_yaml = _repo_root() / "data" / "kv_cache_calculator" / "models.yaml"
+    return load_models_data(repo_models_yaml) if repo_models_yaml.exists() else load_models_data()
+
+
+def _resolve_model_arg(model: str, models_yaml: Optional[Union[str, Path]] = None):
+    _ensure_simulator_importable()
+    from kvcache_sim.model_aliases import resolve_model_alias
+
+    return resolve_model_alias(model, _plugin_models_data(models_yaml))
+
+
+def tokenizer_name_from_args(args: argparse.Namespace) -> str:
+    explicit_tokenizer = getattr(args, "tokenizer", None)
+    if explicit_tokenizer:
+        return explicit_tokenizer
+    model = getattr(args, "model", None)
+    if model:
+        return _resolve_model_arg(model, getattr(args, "models_yaml", None)).tokenizer or DEFAULT_TOKENIZER
+    return DEFAULT_TOKENIZER
+
+
 def _parse_csv_numbers(value: Optional[str], fallback: list[float]) -> list[float]:
     if not value:
         return fallback
@@ -228,14 +255,13 @@ class KVCacheHitRatePlugin:
         include_draft_kv_cache: bool = False,
         max_records: int = 0,
         max_events: int = 0,
+        models_yaml: Optional[Union[str, Path]] = None,
     ) -> dict[str, Any]:
         _ensure_simulator_importable()
-        from kvcache_sim.calculator import load_models_data
         from kvcache_sim.simulator import run_sweep
         from kvcache_sim.trace import parse_trace_file
 
-        models_yaml = _repo_root() / "data" / "kv_cache_calculator" / "models.yaml"
-        models_data = load_models_data(models_yaml) if models_yaml.exists() else None
+        models_data = _plugin_models_data(models_yaml)
         trace = parse_trace_file(
             trace_path,
             block_size=self.trace_plugin.block_size,
@@ -361,7 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def add_tokenizer_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--block-size", type=int, default=DEFAULT_BLOCK_SIZE)
-    parser.add_argument("--tokenizer", default=DEFAULT_TOKENIZER)
+    parser.add_argument("--tokenizer", default=None)
     add_dataset_args(parser)
     parser.add_argument("--use-chat-template", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -401,12 +427,13 @@ def add_simulator_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-events", type=int, default=0)
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--plot-output", type=Path, default=None)
+    parser.add_argument("--models-yaml", type=Path, default=None)
 
 
 def plugin_from_args(args: argparse.Namespace) -> KVCacheHitRatePlugin:
     tokenizer = object() if getattr(args, "command", "") == "simulate" else None
     return KVCacheHitRatePlugin(
-        tokenizer_name_or_path=getattr(args, "tokenizer", DEFAULT_TOKENIZER),
+        tokenizer_name_or_path=tokenizer_name_from_args(args),
         block_size=getattr(args, "block_size", DEFAULT_BLOCK_SIZE),
         trust_remote_code=getattr(args, "trust_remote_code", False),
         local_files_only=getattr(args, "local_files_only", False),
@@ -415,8 +442,9 @@ def plugin_from_args(args: argparse.Namespace) -> KVCacheHitRatePlugin:
 
 
 def simulator_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    resolved_model = _resolve_model_arg(args.model, getattr(args, "models_yaml", None))
     kwargs: dict[str, Any] = {
-        "model_id": args.model,
+        "model_id": resolved_model.model_id,
         "precision": args.kv_precision,
         "indexer_precision": args.indexer_precision,
         "budgets_gib": _parse_csv_numbers(args.budgets_gib, DEFAULT_BUDGETS_GIB),
@@ -428,6 +456,7 @@ def simulator_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "estimate_tokens": args.estimate_tokens,
         "include_draft_kv_cache": args.include_draft_kv_cache,
         "max_events": args.max_events,
+        "models_yaml": args.models_yaml,
     }
     if args.command == "simulate":
         kwargs["max_records"] = getattr(args, "max_records", 0)

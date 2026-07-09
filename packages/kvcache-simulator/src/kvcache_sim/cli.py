@@ -7,6 +7,7 @@ import sys
 
 from .calculator import load_models_data, models_by_id
 from .formatting import render_json, render_summary, render_table
+from .model_aliases import resolve_model_alias
 from .plotting import plot_hit_rate_sweep
 from .progress import ProgressBar
 from .simulator import DEFAULT_BUDGETS_GIB, DEFAULT_POLICIES, run_sweep
@@ -81,12 +82,13 @@ def run_sweep_command(args: argparse.Namespace) -> int:
     progress = ProgressBar(enabled=(not args.no_progress and sys.stderr.isatty()))
     try:
         data = load_models_data(args.models_yaml)
+        resolved_model = resolve_model_alias(args.model, data)
         progress.update(0, 4, "reading trace")
         trace = parse_trace_file(args.trace, block_size=args.block_size, max_records=args.max_records, max_events=args.max_events)
         progress.update(1, 4, "trace loaded")
         result = run_sweep(
             trace,
-            model_id=args.model,
+            model_id=resolved_model.model_id,
             precision=args.kv_precision,
             indexer_precision=args.indexer_precision,
             budgets_gib=_parse_csv_numbers(args.budgets_gib),

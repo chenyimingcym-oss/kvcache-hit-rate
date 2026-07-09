@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .calculator import BYTES_PER_GIB, calculate_cache_size, load_models_data, models_by_id
 from .cpp_backend import run_cpp_sweep
+from .model_aliases import resolve_model_alias
 from .plan import ExecutionPlan, build_execution_plan
 from .policies import PolicyResult, simulate_ceiling, simulate_policy
 from .trace import TraceData
@@ -119,7 +120,7 @@ def run_sweep(
     data = models_data or load_models_data()
     models = models_by_id(data)
     if model_id not in models:
-        raise ValueError(f"Unknown model id: {model_id}")
+        model_id = resolve_model_alias(model_id, data).model_id
     model = models[model_id]
     warmup_requests = warmup_requests_for_trace(trace, warmup_fraction)
     total_measured_tokens = measured_tokens_for_trace(trace, warmup_requests)

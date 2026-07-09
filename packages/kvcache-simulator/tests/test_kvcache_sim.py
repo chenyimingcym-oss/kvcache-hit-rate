@@ -11,6 +11,7 @@ from pathlib import Path
 
 from kvcache_sim.calculator import calculate_cache_size, load_models_data, models_by_id
 from kvcache_sim.cpp_backend import _build_path_for_source, _write_binary_trace, ensure_cpp_simulator
+from kvcache_sim.model_aliases import resolve_model_alias
 from kvcache_sim.plan import build_execution_plan
 from kvcache_sim.policies import simulate_policy
 from kvcache_sim.plotting import plot_hit_rate_sweep
@@ -85,6 +86,14 @@ class CalculatorTests(unittest.TestCase):
             self.skipTest("web calculator catalog is not present")
 
         self.assertEqual(bundled_catalog.read_text(encoding="utf-8"), web_catalog.read_text(encoding="utf-8"))
+
+    def test_model_alias_resolves_huggingface_repo_and_label(self) -> None:
+        from_repo = resolve_model_alias("Qwen/Qwen3.6-27B", self.models_data)
+        from_label = resolve_model_alias("Qwen3.6-27B", self.models_data)
+
+        self.assertEqual(from_repo.model_id, "qwen3.6-27b")
+        self.assertEqual(from_label.model_id, "qwen3.6-27b")
+        self.assertEqual(from_repo.tokenizer, "Qwen/Qwen3.6-27B")
 
 
 class TraceParserTests(unittest.TestCase):
@@ -282,6 +291,21 @@ class SweepAndCliTests(unittest.TestCase):
 
         self.assertEqual([point["cacheBlocks"] for point in result["points"]], [1])
         self.assertEqual(result["points"][0]["gib"], 0.00025)
+
+    def test_run_sweep_accepts_huggingface_model_alias(self) -> None:
+        trace = make_trace(["A"], ["B"], ["A"], ["B"])
+        result = run_sweep(
+            trace,
+            model_id="Qwen/Qwen3.6-27B",
+            precision="fp8_int8",
+            budgets_gib=[0.00025],
+            policies=["fifo"],
+            backend="python",
+            models_data=self.models_data,
+        )
+
+        self.assertEqual(result["metadata"]["modelId"], "qwen3.6-27b")
+        self.assertEqual(result["metadata"]["modelLabel"], "Qwen3.6-27B")
 
     def test_plot_hit_rate_sweep_writes_image(self) -> None:
         try:
@@ -543,6 +567,103 @@ class SweepAndCliTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unsupported dataset format", result.stderr)
         self.assertIn("Supported dataset formats", result.stderr)
+
+    def test_plugin_run_derives_tokenizer_from_model_alias(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT))
+        from plugins.kv_cache_hit_rate_plugin import build_parser, simulator_kwargs, tokenizer_name_from_args
+
+        args = build_parser().parse_args([
+            "run",
+            "--input",
+            "input.jsonl",
+            "--model",
+            "Qwen/Qwen3.6-27B",
+        ])
+
+        self.assertEqual(tokenizer_name_from_args(args), "Qwen/Qwen3.6-27B")
+        self.assertEqual(simulator_kwargs(args)["model_id"], "qwen3.6-27b")
+
+    def test_plugin_run_keeps_explicit_tokenizer(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT))
+        from plugins.kv_cache_hit_rate_plugin import build_parser, tokenizer_name_from_args
+
+        args = build_parser().parse_args([
+            "run",
+            "--input",
+            "input.jsonl",
+            "--model",
+            "Qwen/Qwen3.6-27B",
+            "--tokenizer",
+            "moonshotai/Kimi-K2.6",
+        ])
+
+        self.assertEqual(tokenizer_name_from_args(args), "moonshotai/Kimi-K2.6")
+
+    def test_plugin_run_uses_custom_models_yaml_for_alias_and_simulation(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT))
+        from plugins.kv_cache_hit_rate_plugin import KVCacheHitRatePlugin, build_parser, simulator_kwargs, tokenizer_name_from_args
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            models_yaml = tmpdir_path / "models.yaml"
+            models_yaml.write_text(
+                "\n".join([
+                    "precision_options:",
+                    "  - id: fp8_int8",
+                    "    label: \"FP8 / INT8\"",
+                    "    bytes_per_element: 1",
+                    "indexer_precision_options:",
+                    "  - id: fp8_int8",
+                    "    label: \"FP8 / INT8\"",
+                    "    bytes_per_element: 1",
+                    "models:",
+                    "  - id: custom-1b",
+                    "    label: \"Custom-1B\"",
+                    "    family: \"Custom\"",
+                    "    formula: \"standard_gqa\"",
+                    "    default_tokens: 1024",
+                    "    source_url: \"https://huggingface.co/Custom/Custom-1B/raw/main/config.json\"",
+                    "    fields:",
+                    "      num_hidden_layers: 1",
+                    "      num_key_value_heads: 1",
+                    "      head_dim: 1",
+                ])
+                + "\n",
+                encoding="utf-8",
+            )
+            trace_path = tmpdir_path / "trace.jsonl"
+            trace_path.write_text(
+                "\n".join([
+                    json.dumps({"block_size": 1, "hash_ids": ["A"], "input_length": 1}),
+                    json.dumps({"block_size": 1, "hash_ids": ["B"], "input_length": 1}),
+                    json.dumps({"block_size": 1, "hash_ids": ["A"], "input_length": 1}),
+                ])
+                + "\n",
+                encoding="utf-8",
+            )
+
+            args = build_parser().parse_args([
+                "run",
+                "--input",
+                "input.jsonl",
+                "--model",
+                "Custom/Custom-1B",
+                "--models-yaml",
+                str(models_yaml),
+                "--budgets-gib",
+                "0.000000002",
+            ])
+
+            self.assertEqual(tokenizer_name_from_args(args), "Custom/Custom-1B")
+            kwargs = simulator_kwargs(args)
+            self.assertEqual(kwargs["model_id"], "custom-1b")
+            plugin = KVCacheHitRatePlugin(tokenizer=object(), block_size=1)
+            result = plugin.simulate_trace(trace_path, **kwargs)
+
+        self.assertEqual(result["metadata"]["modelId"], "custom-1b")
+        self.assertEqual(result["metadata"]["modelLabel"], "Custom-1B")
+        self.assertEqual(result["metadata"]["bytesPerBlock"], 2)
+        self.assertEqual(result["points"][0]["cacheBlocks"], 1)
 
 
 class TempPathTests(unittest.TestCase):
