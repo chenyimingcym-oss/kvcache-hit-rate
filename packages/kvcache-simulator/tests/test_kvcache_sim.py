@@ -116,6 +116,34 @@ class TraceParserTests(unittest.TestCase):
         trace = parse_trace_lines([line], block_size=64)
         self.assertEqual(trace.block_size, 64)
 
+
+class DatasetConverterTests(unittest.TestCase):
+    def test_sharegpt_pair_turns_with_human_and_assistant_keys(self) -> None:
+        from plugins.dataset_converters import normalize_dataset_record
+
+        record = {
+            "conversation_id": "conv-1",
+            "conversation": [
+                {
+                    "human": "写一个 landing page",
+                    "assistant": "下面是一个 HTML 示例",
+                }
+            ],
+        }
+
+        normalized = normalize_dataset_record(record, dataset_format="sharegpt")
+
+        self.assertEqual(normalized["request_id"], "conv-1")
+        self.assertEqual(
+            normalized["messages"],
+            [
+                {"role": "user", "content": "写一个 landing page"},
+                {"role": "assistant", "content": "下面是一个 HTML 示例"},
+            ],
+        )
+        self.assertIn("写一个 landing page", normalized["prompt"])
+        self.assertIn("下面是一个 HTML 示例", normalized["prompt"])
+
     def test_trace_block_size_overrides_cli_fallback(self) -> None:
         lines = [
             json.dumps({"hash_ids": ["A", "B"], "input_length": 32}),

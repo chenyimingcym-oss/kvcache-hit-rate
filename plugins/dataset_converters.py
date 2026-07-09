@@ -115,10 +115,17 @@ def _sharegpt_messages(record: dict[str, Any]) -> list[dict[str, str]]:
     for turn in conversations:
         if not isinstance(turn, dict):
             continue
-        raw_role = turn.get("from") or turn.get("role")
-        role = _SHAREGPT_ROLE_MAP.get(str(raw_role).lower(), str(raw_role or "unknown"))
-        content = content_to_text(turn.get("value") if "value" in turn else turn.get("content"))
-        messages.append({"role": role, "content": content})
+        if "from" in turn or "role" in turn or "value" in turn or "content" in turn:
+            raw_role = turn.get("from") or turn.get("role")
+            role = _SHAREGPT_ROLE_MAP.get(str(raw_role).lower(), str(raw_role or "unknown"))
+            content = content_to_text(turn.get("value") if "value" in turn else turn.get("content"))
+            messages.append({"role": role, "content": content})
+            continue
+        for raw_role in ("system", "human", "user", "gpt", "assistant", "bot", "chatgpt"):
+            if raw_role not in turn:
+                continue
+            role = _SHAREGPT_ROLE_MAP.get(raw_role, raw_role)
+            messages.append({"role": role, "content": content_to_text(turn.get(raw_role))})
 
     if not messages:
         raise ValueError("ShareGPT conversations list contains no valid turns")
