@@ -17,3 +17,5 @@ dist/
 !package.json
 !**/package.json
 test/
+example/
+outputs/
