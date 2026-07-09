@@ -46,7 +46,7 @@ Supported dataset formats:
 
 | Parameter | Commands | Meaning |
 | --- | --- | --- |
-| `--tokenizer NAME_OR_PATH` | `kvcache-hit-rate convert`, `run` | Hugging Face tokenizer id or local tokenizer path. For `run`, omitted values default to the tokenizer repo inferred from `--model`; explicit values override that inference. |
+| `--tokenizer NAME_OR_PATH` | `kvcache-hit-rate convert`, `run` | Hugging Face tokenizer id or local tokenizer path. Required for `convert`. For `run`, omitted values default to the tokenizer repo inferred from required `--model`; explicit values override that inference. |
 | `--block-size N` | `kvcache-hit-rate convert`, `run`; `kvcache-simulator run/sweep` | Token block size used for trace generation or as a fallback when trace records omit `block_size`. Trace-declared `block_size` overrides the fallback. |
 | `--use-chat-template` | `kvcache-hit-rate convert`, `run` | Render `messages` records with the tokenizer chat template before tokenization. |
 | `--trust-remote-code` | `kvcache-hit-rate convert`, `run` | Pass `trust_remote_code=True` when loading the tokenizer. Use only with trusted tokenizer repositories. |
@@ -56,7 +56,7 @@ Supported dataset formats:
 
 | Parameter | Commands | Meaning |
 | --- | --- | --- |
-| `--model ID` | Simulation commands | Model id from the bundled model catalog, or a known alias such as a catalog label or Hugging Face repo id. Use `kvcache-simulator list-models` to inspect supported ids. |
+| `--model ID` | Simulation commands | Required model id from the bundled model catalog, or a known alias such as a catalog label or Hugging Face repo id. Use `kvcache-simulator list-models` to inspect supported ids. |
 | `--kv-precision ID` | Simulation commands | KV cache precision, usually `bf16_fp16`, `fp8_int8`, or `fp4_int4`. |
 | `--indexer-precision ID` | Simulation commands | Indexer cache precision for models that define an indexer cache. |
 | `--include-draft-kv-cache` | Simulation commands | Include draft/MTP KV cache layers when supported by the selected model. |

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import gzip
+import io
 import json
 import shutil
 import subprocess
@@ -582,6 +584,30 @@ class SweepAndCliTests(unittest.TestCase):
 
         self.assertEqual(tokenizer_name_from_args(args), "Qwen/Qwen3.6-27B")
         self.assertEqual(simulator_kwargs(args)["model_id"], "qwen3.6-27b")
+
+    def test_plugin_run_requires_model(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT))
+        from plugins.kv_cache_hit_rate_plugin import build_parser
+
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args([
+                "run",
+                "--input",
+                "input.jsonl",
+            ])
+
+    def test_plugin_convert_requires_tokenizer(self) -> None:
+        sys.path.insert(0, str(REPO_ROOT))
+        from plugins.kv_cache_hit_rate_plugin import build_parser
+
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args([
+                "convert",
+                "--input",
+                "input.jsonl",
+                "--output",
+                "trace.jsonl",
+            ])
 
     def test_plugin_run_keeps_explicit_tokenizer(self) -> None:
         sys.path.insert(0, str(REPO_ROOT))

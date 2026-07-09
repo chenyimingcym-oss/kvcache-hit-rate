@@ -94,7 +94,7 @@ def tokenizer_name_from_args(args: argparse.Namespace) -> str:
     model = getattr(args, "model", None)
     if model:
         return _resolve_model_arg(model, getattr(args, "models_yaml", None)).tokenizer or DEFAULT_TOKENIZER
-    return DEFAULT_TOKENIZER
+    raise ValueError("--tokenizer is required when --model is not available")
 
 
 def _parse_csv_numbers(value: Optional[str], fallback: list[float]) -> list[float]:
@@ -342,7 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     convert.add_argument("--input", type=Path, required=True)
     convert.add_argument("--output", type=Path, required=True)
-    add_tokenizer_args(convert)
+    add_tokenizer_args(convert, require_tokenizer=True)
     convert.add_argument("--max-records", type=int, default=0)
     convert.add_argument("--strict", action="store_true")
 
@@ -385,9 +385,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_tokenizer_args(parser: argparse.ArgumentParser) -> None:
+def add_tokenizer_args(parser: argparse.ArgumentParser, *, require_tokenizer: bool = False) -> None:
     parser.add_argument("--block-size", type=int, default=DEFAULT_BLOCK_SIZE)
-    parser.add_argument("--tokenizer", default=None)
+    parser.add_argument("--tokenizer", default=None, required=require_tokenizer)
     add_dataset_args(parser)
     parser.add_argument("--use-chat-template", action="store_true")
     parser.add_argument("--trust-remote-code", action="store_true")
@@ -404,7 +404,7 @@ def add_dataset_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_simulator_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--model", required=True)
     parser.add_argument("--kv-precision", default=DEFAULT_PRECISION)
     parser.add_argument("--indexer-precision", default=None)
     parser.add_argument("--budgets-gib", default=",".join(str(v) for v in DEFAULT_BUDGETS_GIB))

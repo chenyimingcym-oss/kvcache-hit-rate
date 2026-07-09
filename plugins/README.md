@@ -65,6 +65,7 @@ Convert prompt JSONL into trace JSONL:
 python3 kv_cache_hit_rate_plugin.py convert \
   --input ../test/prompts.jsonl \
   --output /tmp/kvcache_trace_blksz64.jsonl \
+  --tokenizer Qwen/Qwen3.6-27B \
   --block-size 64 \
   --local-files-only
 ```
@@ -76,6 +77,7 @@ python3 kv_cache_hit_rate_plugin.py convert \
   --input openai_messages.jsonl \
   --output /tmp/kvcache_trace_blksz64.jsonl \
   --dataset-format openai \
+  --tokenizer Qwen/Qwen3.6-27B \
   --use-chat-template \
   --block-size 64 \
   --local-files-only
